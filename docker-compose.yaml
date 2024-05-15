@@ -1,0 +1,45 @@
+version: '3'
+
+services:
+  bot:
+    build:
+      context: ./bot
+    environment:
+      - TOKEN=${TOKEN}
+      - RM_HOST=${RM_HOST}
+      - RM_PORT=${RM_PORT}
+      - RM_USER=${RM_USER}
+      - RM_PASSWORD=${RM_PASSWORD}
+    networks:
+      bot_net:
+
+  db:
+    build: 
+      context: ./db
+      args:
+        - DB_USER=${DB_USER}
+        - DB_PASSWORD=${DB_PASSWORD}
+        - DB_REPL_USER=${DB_REPL_USER}
+        - DB_REPL_PASSWORD=${DB_REPL_PASSWORD}
+        - DB_PORT=${DB_PORT}
+        - DB_DATABASE=${DB_DATABASE}
+    networks:
+      bot_net:
+    restart: always
+
+  db_repl:
+    build: 
+      context: ./db_repl
+      args:
+        - DB_HOST=${DB_HOST}
+        - DB_PORT=${DB_PORT}
+        - DB_REPL_USER=${DB_REPL_USER}
+        - DB_REPL_PASSWORD=${DB_REPL_PASSWORD}
+    depends_on:
+      - db
+    networks:
+      bot_net:
+    restart: always
+
+networks:
+  bot_net:
