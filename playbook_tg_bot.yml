@@ -1,0 +1,194 @@
+- name: Database
+  hosts: db
+  become: yes
+
+  tasks:
+
+    - name: Update
+      apt:
+        upgrade: yes
+        update_cache: yes
+        cache_valid_time: 86400
+      become: yes
+    
+    - name: Install packages
+      ansible.builtin.apt:
+        name:
+          - openssh-server
+          - postgresql
+          - postgresql-contrib
+          - acl
+          - python3
+          - python3-psycopg2
+      become: yes
+
+    - name: Check PostgreSQL service
+      service:
+        name: postgresql
+        state: started
+        enabled: true
+      become: true
+    
+    - name: Check SSH service
+      service:
+        name: ssh
+        state: started
+        enabled: true
+      become: true
+
+    - name: Init DB
+      block:
+
+      - name: Copy file
+        copy:
+          src: "sqlfile.sql"
+          dest: /tmp/sqlfile.sql
+          mode: '0644'
+          owner: 'postgres'
+          group: 'postgres'
+        become: true
+
+      # - name: Change owner
+      #   file:
+      #     path: /tmp/sqlfile.sql
+      #     owner: postgres
+      #     group: postgres
+      #   become: true
+
+      - name: Create database
+        community.postgresql.postgresql_db:
+          name: "{{DB_NAME}}"
+          state: present
+        become: true
+        become_user: postgres
+
+      - name: Create Replication User
+        community.postgresql.postgresql_user:
+          name: "{{DB_REPL_USER}}"
+          password: "{{DB_REPL_PASS}}"
+          role_attr_flags: REPLICATION,LOGIN,SUPERUSER
+        become: true
+        become_user: postgres
+
+      - name: Init DB
+        ansible.builtin.shell: psql -d {{DB_NAME}} -a -f /tmp/sqlfile.sql
+        environment:
+          DB_NAME: "{{DB_NAME}}"
+          DB_REPL_USER: "{{DB_REPL_USER}}"
+          DB_REPL_PASS: "{{DB_REPL_PASS}}"
+        become: true
+        become_user: postgres
+
+    - name: Change PostgreSQL config
+      ansible.builtin.blockinfile:
+        path: /etc/postgresql/15/main/postgresql.conf
+        append_newline: true
+        prepend_newline: true
+        block: |
+          archive_mode = on
+          archive_command = 'cp %p /oracle/pg_data/archive/%f'
+          max_wal_senders = 10
+          wal_level = replica
+          wal_log_hints = on
+          log_replication_commands = on
+          logging_collector = on
+          log_directory = '/var/log/postgresql/'
+          log_filename = 'postgresql.log'
+          log_file_mode = 0644
+          listen_addresses = '*'
+      become: true
+
+    - name: Config PostgreSQL HBA
+      ansible.builtin.blockinfile:
+        path: /etc/postgresql/15/main/pg_hba.conf
+        append_newline: true
+        prepend_newline: true
+        block: "host replication repl_user {{DB_REPL_HOST}}/24 scram-sha-256"
+      become: true
+
+    - name: Restart PostgreSQL
+      service:
+        name: postgresql
+        state: restarted
+      become: true
+
+    - name: Creates directory for archives
+      ansible.builtin.file:
+        path: /oracle/pg_data/archive
+        owner: postgres
+        group: postgres
+        state: directory
+      become: true
+
+
+
+- name: Database replica
+  hosts: db_repl
+  become: yes
+
+  tasks:
+
+    - name: Update
+      apt:
+        upgrade: yes
+        update_cache: yes
+        cache_valid_time: 86400
+      become: yes
+    
+    - name: Install packages
+      ansible.builtin.apt:
+        name:
+          - postgresql
+          - postgresql-contrib
+          - python3
+          - acl
+      become: yes
+
+    - name: Check PostgreSQL service
+      service:
+        name: postgresql
+        state: started
+        enabled: true
+      become: true
+    
+    - name: Config PostgreSQL config
+      ansible.builtin.blockinfile:
+        path: /etc/postgresql/15/main/postgresql.conf
+        append_newline: true
+        prepend_newline: true
+        block: "listen_addresses = '*'"
+      become: true
+
+    - name: Stop PostgreSQL
+      service:
+        name: postgresql
+        state: stopped
+      become: true
+
+    - name: Remove previous data
+      file:
+        path: /var/lib/postgresql/15/main
+        state: absent
+      become: true
+
+    - name: Creates directory for replication
+      ansible.builtin.file:
+        path: /var/lib/postgresql/15/main
+        mode: 0750
+        owner: postgres
+        group: postgres
+        state: directory
+      become: true
+
+    - name: Start backup
+      command: "pg_basebackup -R -h {{DB_HOST}} -U {{DB_REPL_USER}} -D /var/lib/postgresql/15/main -P -w"
+      environment:
+        PGPASSWORD: "{{DB_REPL_PASS}}"
+      become: true
+      become_user: postgres
+  
+    - name: Start PostgreSQL
+      service:
+        name: postgresql
+        state: started
+      become: true
