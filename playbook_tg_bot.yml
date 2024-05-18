@@ -264,7 +264,7 @@
           Environment="RM_PORT={{RM_PORT}}"
           Environment="RM_USER={{RM_USER}}"
           Environment="RM_PASSWORD={{RM_PASSWORD}}"
-          Environment="DB_NAME={{DB_DATABASE}}"
+          Environment="DB_DATABASE={{DB_DATABASE}}"
 
           [Install]
           WantedBy=multi-user.target
