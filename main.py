@@ -15,7 +15,7 @@ def main() :
     port = os.getenv('RM_PORT') or ''
     username = os.getenv('RM_USER') or ''
     password = os.getenv('RM_PASSWORD') or ''
-    db_name = os.getenv('DB_NAME') or ''
+    db_name = os.getenv('DB_DATABASE') or ''
 
     host = Host(host=host, port=int(port), login=username, password=password)
 
