@@ -235,8 +235,7 @@ class Bot:
             return ConversationHandler.END
         try:
             for val in data:
-                self.send_to_host(
-                    '',                               # TODO: thats way is wrong
+                self.send_to_host('',
                     request = f'psql -c "INSERT INTO {table} ({column}) VALUES (\'{val}\') '
                                 + f' ON CONFLICT DO NOTHING;" {self.db_name}'
                 )
@@ -247,14 +246,16 @@ class Bot:
 
     def send_to_host(self, command: str, grep='', request=''):
         """Some docstrings..."""
+
         if command in HOST_COMMANDS:
             req = HOST_COMMANDS[command][0]
+        elif command in DB_COMMANDS[command][0]:
+            req = DB_COMMANDS[command][0]
         elif request:
             req = request
         else:
             return 'Команда введена неверно.'
-            
-        
+
         grep = re.sub(r'\W', '', grep)
         if grep:
             req += f' | grep {grep}'
