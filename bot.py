@@ -249,7 +249,7 @@ class Bot:
 
         if command in HOST_COMMANDS:
             req = HOST_COMMANDS[command][0]
-        elif command in DB_COMMANDS[command][0]:
+        elif command in DB_COMMANDS:
             req = DB_COMMANDS[command][0]
         elif request:
             req = request
