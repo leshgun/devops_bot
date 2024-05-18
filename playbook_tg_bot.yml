@@ -1,16 +1,28 @@
-- name: Database
-  hosts: db
-  become: yes
-
+- name: All
+  hosts: all
+  become: true
   tasks:
+
+    - name: Sync date and time
+      service:
+        name: systemd-timesyncd
+        state: restarted
+        enabled: true
+      ignore_errors: yes
 
     - name: Update
       apt:
         upgrade: yes
         update_cache: yes
         cache_valid_time: 86400
-      become: yes
-    
+
+
+
+- name: Database
+  hosts: db
+  become: true
+  tasks:
+
     - name: Install packages
       ansible.builtin.apt:
         name:
@@ -18,23 +30,42 @@
           - postgresql
           - postgresql-contrib
           - acl
+          - openssl
           - python3
+          - python3-passlib
           - python3-psycopg2
-      become: yes
 
     - name: Check PostgreSQL service
       service:
         name: postgresql
         state: started
         enabled: true
-      become: true
     
     - name: Check SSH service
       service:
         name: ssh
         state: started
         enabled: true
-      become: true
+
+    - name: Get hash of password
+      ansible.builtin.command: 
+        python3 -c "from passlib.hash import sha512_crypt; print(sha512_crypt.hash('{{DB_PASSWORD}}'))"
+      register: pass_hash
+
+    - name: Create user for ssh connections
+      ansible.builtin.user:
+        name: "{{DB_USER}}"
+        shell: /bin/bash
+        groups: users
+        append: yes
+        generate_ssh_key: yes
+        ssh_key_bits: 2048
+        ssh_key_file: .ssh/id_rsa
+        # Should be replaced in Python >=3.13
+        # password: "{{ DB_PASSWORD | password_hash('sha512') }}"
+        # password: "{{passlib.hash.sha512_crypt.hash('DB_PASSWORD')}}"
+        password: "{{pass_hash.stdout}}"
+
 
     - name: Init DB
       block:
@@ -46,37 +77,46 @@
           mode: '0644'
           owner: 'postgres'
           group: 'postgres'
-        become: true
 
-      # - name: Change owner
-      #   file:
-      #     path: /tmp/sqlfile.sql
-      #     owner: postgres
-      #     group: postgres
-      #   become: true
+      - name: Create user
+        community.postgresql.postgresql_user:
+          name: "{{DB_USER}}"
+          password: "{{DB_PASSWORD}}"
+        become_user: postgres
 
       - name: Create database
         community.postgresql.postgresql_db:
-          name: "{{DB_NAME}}"
+          name: "{{DB_DATABASE}}"
           state: present
-        become: true
+          owner: master
+        become_user: postgres
+
+      - name: Init tables
+        ansible.builtin.shell: psql -d {{DB_DATABASE}} -a -f /tmp/sqlfile.sql
+        become_user: postgres
+      
+      - name: Grant all permisions to tables
+        postgresql_privs:
+          db: "{{DB_DATABASE}}"
+          role: "{{DB_USER}}"
+          objs: ALL_IN_SCHEMA
+          privs: SELECT,INSERT,UPDATE,DELETE
+        become_user: postgres
+
+      - name: Grant all permisions to sequences
+        postgresql_privs:
+            db: "{{DB_DATABASE}}"
+            objs: ALL_IN_SCHEMA
+            privs: SELECT,UPDATE,USAGE
+            type: sequence
+            role: "{{DB_USER}}"
         become_user: postgres
 
       - name: Create Replication User
         community.postgresql.postgresql_user:
           name: "{{DB_REPL_USER}}"
-          password: "{{DB_REPL_PASS}}"
+          password: "{{DB_REPL_PASSWORD}}"
           role_attr_flags: REPLICATION,LOGIN,SUPERUSER
-        become: true
-        become_user: postgres
-
-      - name: Init DB
-        ansible.builtin.shell: psql -d {{DB_NAME}} -a -f /tmp/sqlfile.sql
-        environment:
-          DB_NAME: "{{DB_NAME}}"
-          DB_REPL_USER: "{{DB_REPL_USER}}"
-          DB_REPL_PASS: "{{DB_REPL_PASS}}"
-        become: true
         become_user: postgres
 
     - name: Change PostgreSQL config
@@ -96,7 +136,6 @@
           log_filename = 'postgresql.log'
           log_file_mode = 0644
           listen_addresses = '*'
-      become: true
 
     - name: Config PostgreSQL HBA
       ansible.builtin.blockinfile:
@@ -104,13 +143,11 @@
         append_newline: true
         prepend_newline: true
         block: "host replication repl_user {{DB_REPL_HOST}}/24 scram-sha-256"
-      become: true
 
     - name: Restart PostgreSQL
       service:
         name: postgresql
         state: restarted
-      become: true
 
     - name: Creates directory for archives
       ansible.builtin.file:
@@ -118,22 +155,13 @@
         owner: postgres
         group: postgres
         state: directory
-      become: true
 
 
 
 - name: Database replica
   hosts: db_repl
-  become: yes
-
+  become: true
   tasks:
-
-    - name: Update
-      apt:
-        upgrade: yes
-        update_cache: yes
-        cache_valid_time: 86400
-      become: yes
     
     - name: Install packages
       ansible.builtin.apt:
@@ -142,14 +170,12 @@
           - postgresql-contrib
           - python3
           - acl
-      become: yes
 
     - name: Check PostgreSQL service
       service:
         name: postgresql
         state: started
         enabled: true
-      become: true
     
     - name: Config PostgreSQL config
       ansible.builtin.blockinfile:
@@ -157,19 +183,16 @@
         append_newline: true
         prepend_newline: true
         block: "listen_addresses = '*'"
-      become: true
 
     - name: Stop PostgreSQL
       service:
         name: postgresql
         state: stopped
-      become: true
 
     - name: Remove previous data
       file:
         path: /var/lib/postgresql/15/main
         state: absent
-      become: true
 
     - name: Creates directory for replication
       ansible.builtin.file:
@@ -178,17 +201,79 @@
         owner: postgres
         group: postgres
         state: directory
-      become: true
 
     - name: Start backup
       command: "pg_basebackup -R -h {{DB_HOST}} -U {{DB_REPL_USER}} -D /var/lib/postgresql/15/main -P -w"
       environment:
-        PGPASSWORD: "{{DB_REPL_PASS}}"
-      become: true
+        PGPASSWORD: "{{DB_REPL_PASSWORD}}"
       become_user: postgres
   
     - name: Start PostgreSQL
       service:
         name: postgresql
         state: started
-      become: true
+
+
+
+- name: Database
+  hosts: bot
+  become: true
+  tasks:
+
+    - name: Install packages
+      ansible.builtin.apt:
+        name:
+          - acl
+          - python3
+          - python3-pip
+          - python3-tk
+          - git
+
+    - name: Clone the repository
+      ansible.builtin.git:
+        repo: "https://github.com/leshgun/devops_bot.git"
+        dest: "{{BOT_DIR}}"
+        version: "master" 
+        force: true
+    
+    - name: Install requirements
+      ansible.builtin.shell: pip3 install -r requirements.txt --break-system-packages
+      args:
+        chdir: "{{BOT_DIR}}"
+
+    - name: Create service for bot
+      copy:
+        dest: /etc/systemd/system/tgbot.service
+        owner: root
+        group: root
+        mode: 0700
+        content: |
+          [Unit]
+          Description=Telegram Bot
+          After=network.target
+
+          [Service]
+          User=root
+          WorkingDirectory={{BOT_DIR}}
+          ExecStart=/usr/bin/python3 {{BOT_DIR}}/main.py
+          Restart=always
+          StandardOutput=file:/var/log/tgbot.log
+          StandardError=file:/var/log/tgbot.log
+          Environment="TOKEN={{TOKEN}}"
+          Environment="RM_HOST={{RM_HOST}}"
+          Environment="RM_PORT={{RM_PORT}}"
+          Environment="RM_USER={{RM_USER}}"
+          Environment="RM_PASSWORD={{RM_PASSWORD}}"
+          Environment="DB_NAME={{DB_DATABASE}}"
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd
+      command: systemctl daemon-reload
+
+    - name: Start and enable service
+      ansible.builtin.service:
+        name: tgbot.service
+        enabled: true
+        state: restarted
