@@ -18,9 +18,7 @@ ENV DB_DATABASE=$DB_DATABASE
 WORKDIR /app
 
 COPY start.sh .
-COPY sqlfile.sql .
 RUN chmod +x start.sh
-RUN chmod +r /app/sqlfile.sql
 
 
 RUN apt-get update && apt-get install openssh-server postgresql postgresql-contrib sudo -y --no-install-recommends
