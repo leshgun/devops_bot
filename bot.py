@@ -1,9 +1,7 @@
 """Module create the Telegram Bot."""
 
-import logging
 import os
 import re
-from tkinter import END
 
 from telegram import Update
 from telegram.ext import (CommandHandler, ConversationHandler, Filters, MessageHandler, Updater)
@@ -58,16 +56,14 @@ class Bot:
     def __init__(self, token: str, host: Host, **kwargs):
         self._token = token
         self._host = host
-        logging.basicConfig(
-            filename='logfile.txt',
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        )
-        self._logger = logging.getLogger(__name__)
         self.updater = Updater(self._token, use_context=True)
         self.dp = self.updater.dispatcher
+        self.logger = kwargs.get('logger', lambda *args: False)
         self.db_name = kwargs.get("db_name", "my_bot")
+        self.bot_name = kwargs.get("bot_name", "tgbot")
         for item in DB_COMMANDS.items():
             DB_COMMANDS[item[0]] = (item[1][0] + self.db_name, item[1][1])
+        self.logger.info(f'Bot {self.bot_name} has been initialized.')
 
     def _simple_conversation_handler(self, ep, ep_c, st, st_c) -> ConversationHandler:
         """Some docstrings..."""
@@ -131,6 +127,7 @@ class Bot:
         ))
         self.updater.start_polling()
         self.updater.idle()
+        self.logger(f'Bot {self.bot_name} has started.')
 
     def echo(self, update: Update, context):
         """Some docstrings..."""
@@ -235,25 +232,40 @@ class Bot:
             return ConversationHandler.END
         try:
             for val in data:
-                self.send_to_host('',
-                    request = f'psql -c "INSERT INTO {table} ({column}) VALUES (\'{val}\') '
-                                + f' ON CONFLICT DO NOTHING;" {self.db_name}'
-                )
+                request = (f'psql -c "INSERT INTO {table} ({column}) VALUES (\'{val}\') '
+                    + f' ON CONFLICT DO NOTHING;" {self.db_name}')
+                self.logger.info(
+                    f'Sending request to DB "{self._host}"'
+                    + f'\n --- Request: {request}'
+                    )
+                response = self.send_to_host('', request = request)
+                self.logger.info(f'RESPONSE: {response}')
             update.message.reply_text('Обновление базы данных прошло успешно.')
         except Exception as exeption:
             update.message.reply_text(f'Обновление базы данных произошло с ошибкой:\n{exeption}')
+            self.logger.warning(
+                'An error occurred during the request.'
+                + f'\n --- Error: {exeption}'
+                )
         return ConversationHandler.END
 
     def send_to_host(self, command: str, grep='', request=''):
         """Some docstrings..."""
 
-        if command in HOST_COMMANDS:
+        self.logger.info(
+            f'Request command to host: {self._host}.'
+            + f'\n--- Command: {command}'
+            + f'\n--- Grep: {grep}'
+            + f'\n--- Request: {request}'
+            )
+        if request:
+            req = request
+        elif command in HOST_COMMANDS:
             req = HOST_COMMANDS[command][0]
         elif command in DB_COMMANDS:
             req = DB_COMMANDS[command][0]
-        elif request:
-            req = request
         else:
+            self.logger.warning('Команда введена неверно.')
             return 'Команда введена неверно.'
 
         grep = re.sub(r'\W', '', grep)
