@@ -12,10 +12,10 @@ You will need 3 machines:
 
 On all machines, the following must be done:
 
-* Installed packages: "openssh-server" (or equivalent), "sudo".
-* Services running: openssh-server
-* A user must be created for *Ansible* with password (as in the file *env_example.yaml*).
-* The *Ansible*-user must be a superuser (there must be an entry like `<username> ALL=(ALL:ALL) NOPASSWD: ALL` in the file */etc/sudoers*)
+* Installed packages: *openssh-server* (or equivalent), *sudo*.
+* Services running: *openssh-server*
+* A user must be created for Ansible with password (as in the file *env_example.yaml*).
+* The Ansible-user must be a superuser (there must be an entry like `<username> ALL=(ALL:ALL) NOPASSWD: ALL` in the file */etc/sudoers*)
 
 To start:
 
