@@ -70,7 +70,7 @@ class Bot:
         return ConversationHandler(
             entry_points=[CommandHandler(ep, ep_c)],
             states={st: [MessageHandler(Filters.text & ~Filters.command, st_c)]},
-            fallbacks=[]
+            fallbacks=[CommandHandler('cancel', self.cancel)]
         )
 
     def start_botting(self):
@@ -92,9 +92,9 @@ class Bot:
                 'save_to_db': [MessageHandler(
                     Filters.text & ~Filters.command,
                     self.save_to_db
-                )]
+                )],
             },
-            fallbacks=[]
+            fallbacks=[CommandHandler('cancel', self.cancel)],
         ))
         self.dp.add_handler(ConversationHandler(
             entry_points=[CommandHandler('find_phone_numbers', self.find_phone_numbers_command)],
@@ -104,9 +104,9 @@ class Bot:
                 'save_to_db': [MessageHandler(
                     Filters.regex(re.compile('да', re.I)) & ~Filters.command,
                     self.save_to_db
-                )]
+                )],
             },
-            fallbacks=[]
+            fallbacks=[CommandHandler('cancel', self.cancel)],
         ))
         self.dp.add_handler(ConversationHandler(
                 entry_points=[
@@ -123,11 +123,16 @@ class Bot:
                         )
                     ]
                 },
-                fallbacks=[]
+                fallbacks=[CommandHandler('cancel', self.cancel)],
         ))
         self.updater.start_polling()
         self.updater.idle()
         self.logger(f'Bot {self.bot_name} has started.')
+
+    def cancel(self, update):
+        """Some docstrings..."""
+        update.message.reply_text('Пока.')
+        return ConversationHandler.END
 
     def echo(self, update: Update, context):
         """Some docstrings..."""
@@ -165,8 +170,12 @@ class Bot:
 
     def find_phone_numbers(self, text: str) -> list:
         """text -> list(numbers)"""
-        regex = re.compile(r"(?:8|\+7)(?:[\s\(-]{0,2})(?:\d{3})(?:[\s\)-]{0,2})"
-                           + r"(?:\d{3})(?:(?:[\s-]?)(?:\d{2})){2}")
+        # regex = re.compile(r"(?:8|\+7)(?:[\s\(-]{0,2})(?:\d{3})(?:[\s\)-]{0,2})"
+        #                    + r"(?:\d{3})(?:(?:[\s-]?)(?:\d{2})){2}[^0-9]?")
+        regex = re.compile(
+            r"(?:^|[^0-9])((?:8|\+7)(?:[\s\(-]{0,2})(?:\d{3})(?:[\s\)-]{0,2})"
+            + r"(?:\d{3})(?:(?:[\s-]?)(?:\d{2})){2})(?:[^0-9]|$)"
+            )
         phone_num_list = regex.findall(text)
         if not phone_num_list:
             return []
