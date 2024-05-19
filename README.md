@@ -10,5 +10,5 @@ To start:
 ansible-playbook playbook_tg_bot.yml -e @env.yaml
 ```
 
-For configuration, you need to create a file "env.yaml", which will store environment variables for containers.
+For configuration, you need to create a file "env.yaml", which will store environment variables for machines.
 An example of such a file can be found in "*env.yaml.example*".
