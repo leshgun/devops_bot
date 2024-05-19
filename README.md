@@ -16,7 +16,7 @@ It is recommended to do this in a virtual environment.
 
 ```bash
 python3 -m venv ./venv
-.\venv\Scripts\activate
+./venv/Scripts/activate
 ```
 
 To start:
